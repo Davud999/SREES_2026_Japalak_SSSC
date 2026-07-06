@@ -1,0 +1,704 @@
+#LyX 2.5 created this file. For more info see https://www.lyx.org/
+\lyxformat 643
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children no
+\language italian
+\language_package default
+\inputencoding utf8
+\fontencoding auto
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_roman_osf false
+\font_sans_osf false
+\font_typewriter_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\float_placement class
+\float_alignment class
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification default
+\crossref_package refstyle
+\use_formatted_ref 0
+\use_minted 0
+\use_lineno 0
+\backgroundcolor none
+\fontcolor none
+\notefontcolor lightgray
+\boxbgcolor red
+\table_border_color default
+\table_odd_row_color default
+\table_even_row_color default
+\table_alt_row_colors_start 1
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tablestyle default
+\tracking_changes false
+\output_changes false
+\change_bars false
+\postpone_fragile_content true
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\docbook_table_output 0
+\docbook_mathml_prefix 1
+\docbook_mathml_version 0
+\end_header
+
+\begin_body
+
+\begin_layout Title
+SSSC Digital Twin Converter
+\end_layout
+
+\begin_layout Author
+Davud Japalak
+\end_layout
+
+\begin_layout Date
+05.07.2026.
+\end_layout
+
+\begin_layout Section*
+Uvod
+\end_layout
+
+\begin_layout Standard
+Static Synchronous Series Compensator (SSSC) je uređaj iz porodice FACTS (Flexible AC Transmission System) tehnologija koji se ugrađuje serijski u prenosnu liniju elektroenergetskog sistema.
+ Njegova osnovna funkcija je regulacija toka aktivne i reaktivne snage kroz liniju putem injektovanja naponskog fazora u seriju sa linijskom impedansom,
+ čime se efektivno mijenja ekvivalentna reaktansa linije i poboljšava upravljivost prenosne mreže.
+\end_layout
+
+\begin_layout Standard
+Cilj ovog projekta je razvoj plugin komponente za natID/dTwin Digital Twin okruženje koja omogućava konverziju standardnih MATPOWER modela elektroenergetske mreže (test-slučajevi case9,
+ case30,
+ case118 i case300) u digitalni model tokova snage proširen SSSC uređajem,
+ uz korištenje natID dense/sparse matričnih struktura za sve matrične proračune,
+ kao što je zahtijevano uputstvom projekta.
+\end_layout
+
+\begin_layout Standard
+Plugin je implementiran u C++ jeziku korištenjem natID SDK-a,
+ sa grafičkim korisničkim interfejsom (GUI) izgrađenim isključivo na natID gui::
+ komponentama,
+ mogućnošću konfiguracije parametara SSSC uređaja putem XML fajla,
+ i arhitekturom zasnovanom na dva izvršna niza (thread) —
+ jedan za samu konverziju modela,
+ drugi za prikaz napretka konverzije u realnom vremenu.
+\end_layout
+
+\begin_layout Section*
+Teorijska osnova
+\end_layout
+
+\begin_layout Standard
+Model tokova snage zasniva se na admitansnoj (Y-bus) matrici mreže,
+ koja opisuje električnu povezanost svih čvorova (bus-eva) sistema.
+ Element admitansne matrice između čvorova i i j računa se iz serijske admitanse i šant admitanse (charging) svake grane prema sljedećim izrazima:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $y_{series}=\frac{1}{r+jx}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $y_{shunt}=j\frac{b}{2}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+gdje je r otpornost,
+ x reaktansa,
+ a b susceptansa (charging) posmatrane grane mreže.
+ Ukupna admitansna matrica Y formira se sabiranjem doprinosa svih grana mreže,
+ pri čemu su dijagonalni elementi Y_ii sume admitansi svih grana povezanih na čvor i,
+ dok su vandijagonalni elementi Y_ij jednaki negativnoj vrijednosti serijske admitanse grane između čvorova i i j.
+\end_layout
+
+\begin_layout Standard
+Za svaki čvor mreže (izuzev referentnog/slack čvora) formira se jednačina bilansa aktivne snage,
+ a za PQ čvorove dodatno i jednačina bilansa reaktivne snage:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $P_{i}=V^{2}_{i}Y_{ii}\cos\theta_{ii}+\sum_{j\neq i}V_{i}Y_{ij}V_{j}\cos(\delta_{i}-\theta_{ij}-\delta_{j})$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $Q_{i}=-V^{2}_{i}Y_{ii}\sin\theta_{ii}+\sum_{j\neq i}V_{i}Y_{ij}V_{j}\sin(\delta_{i}-\theta_{ij}-\delta_{j})$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Ugradnja SSSC uređaja na granu između čvorova k (from) i m (to) modelira se kao injekcija dodatne aktivne i reaktivne snage na oba priključna čvora,
+ proporcionalno naponu tog čvora i injektovanom naponu uređaja V_sssc pod uglom δ_sssc.
+ Korišten je model injekcije snage (power injection model),
+ pri čemu doprinosi na čvoru k i čvoru m imaju suprotan predznak,
+ čime se osigurava očuvanje snage kroz sam uređaj:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\Delta P_{k}=V_{k}\frac{V_{sssc}}{X_{sssc}}\sin(\delta_{k}-\delta_{sssc}),\qquad\Delta P_{m}=-V_{m}\frac{V_{sssc}}{X_{sssc}}\sin(\delta_{m}-\delta_{sssc})$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\Delta Q_{k}=-V_{k}\frac{V_{sssc}}{X_{sssc}}\cos(\delta_{k}-\delta_{sssc}),\qquad\Delta Q_{m}=V_{m}\frac{V_{sssc}}{X_{sssc}}\cos(\delta_{m}-\delta_{sssc})$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+gdje su X_sssc reaktansa uređaja,
+ a V_sssc i δ_sssc fiksni kontrolni parametri (setpoint) injektovanog napona i ugla uređaja.
+ Ovi parametri,
+ kao i pozicija uređaja u mreži (čvorovi k i m),
+ podesivi su putem grafičkog korisničkog interfejsa ili XML konfiguracionog fajla,
+ bez potrebe za izmjenom izvornog koda.
+\end_layout
+
+\begin_layout Section*
+Arhitektura rješenja
+\end_layout
+
+\begin_layout Standard
+Rješenje je implementirano kao natID plugin (dinamička biblioteka,
+ .dylib na macOS / .dll na Windows platformi) koji se učitava u dTwin Digital Twin okruženje.
+ Cjelokupan grafički korisnički interfejs izgrađen je isključivo korištenjem natID gui::
+ biblioteke,
+ bez upotrebe eksternih GUI frameworka.
+\end_layout
+
+\begin_layout Standard
+Plugin se sastoji od dva glavna prikaza (View),
+ organizovana kroz karticni (tab) interfejs:
+\end_layout
+
+\begin_layout Itemize
+Converter tab —
+ omogućava izbor ulaznog MATPOWER fajla i izlazne putanje za generisani digitalni model,
+ prikaz statusa konverzije,
+ i traku napretka (progress indicator) koja se ažurira u realnom vremenu
+\end_layout
+
+\begin_layout Itemize
+Options tab —
+ omogućava podešavanje parametara konverzije (maksimalan broj iteracija,
+ vremenski korak) i parametara SSSC uređaja (pozicija u mreži,
+ reaktansa,
+ injektovani napon i ugao),
+ sa mogućnošću učitavanja i snimanja konfiguracije u XML formatu
+\end_layout
+
+\begin_layout Standard
+Sve matrične operacije (formiranje admitansne Y-bus matrice) izvode se isključivo korištenjem natID dense::CmplxMatrix strukture,
+ u skladu sa zahtjevom projekta da se ne koriste generički C++ kontejneri (poput std::vector) za matrične proračune.
+\end_layout
+
+\begin_layout Standard
+Konverzija ulaznog modela izvodi se u posebnom izvršnom nizu (worker thread),
+ odvojeno od glavnog (GUI) niza aplikacije.
+ Ovakav pristup omogućava da korisnički interfejs ostane odziv (responsive) tokom cijelog trajanja konverzije,
+ čak i za velike mreže (poput case300 sa 300 čvorova) gdje generisanje modela zahtijeva veći broj operacija.
+\end_layout
+
+\begin_layout Standard
+Napredak konverzije prikazuje se u realnom vremenu putem trake napretka u glavnom nizu.
+ Worker thread periodično izvještava o postignutom napretku (izraženom kao vrijednost od 0 do 1) kroz mehanizam asinhronog izvršavanja u glavnom nizu (gui::thread::asyncExecInMainThread),
+ čime se poštuje pravilo da se elementi grafičkog interfejsa smiju mijenjati isključivo iz glavnog niza.
+ Ovim je ispunjen zahtjev projekta za arhitekturu zasnovanu na dva izvršna niza —
+ jedan za konverziju,
+ drugi za prikaz napretka u realnom vremenu.
+\end_layout
+
+\begin_layout Section*
+Implementacija
+\end_layout
+
+\begin_layout Standard
+Ključne funkcije implementirane u fajlu EQPlugin.cpp su sljedeće:
+\end_layout
+
+\begin_layout Standard
+parseMATPOWER —
+ parsira MATPOWER .m fajl (bus,
+ generator i branch podatke) u interne strukture podataka.
+ Funkcija je otporna na proizvoljnu numeraciju čvorova,
+ uključujući mreže poput case300 koje ne koriste uzastopnu numeraciju (1,
+ 2,
+ 3,
+ ...) već tzv.
+ zonsku numeraciju sa "rupama" (npr.
+ 37,
+ 9001,
+ 9005).
+\end_layout
+
+\begin_layout Standard
+buildYMatrix —
+ formira admitansnu (Y-bus) matricu mreže kao natID dense::CmplxMatrix objekat.
+ Mapiranje ID čvora u indeks matrice vrši se preko pomoćne std::map strukture,
+ čime se izbjegava pogrešna pretpostavka da je indeks čvora jednak (ID − 1),
+ koja bi za mreže sa nesekvencijalnom numeracijom (case300) dovela do pristupa izvan granica matrice.
+\end_layout
+
+\begin_layout Standard
+generateDmodl —
+ generiše tekstualni digitalni model (.dmodl) u formatu koji dTwin NL (nelinearni) solver dalje rješava metodom Newton-Raphson.
+ Model uključuje sekcije Vars (nepoznate),
+ Params (fiksni parametri,
+ uključujući admitanse i SSSC kontrolne parametre) i NLEs (nelinearne jednačine bilansa snage).
+\end_layout
+
+\begin_layout Standard
+createModel —
+ orkestrira cijeli proces konverzije (parsiranje,
+ formiranje Y-matrice,
+ generisanje modela,
+ snimanje fajla),
+ uz periodično izvještavanje o napretku putem callback funkcije.
+\end_layout
+
+\begin_layout Section*
+Testiranje i rezultati
+\end_layout
+
+\begin_layout Standard
+Plugin je testiran na četiri standardna IEEE test-slučaja različitih veličina,
+ sa ciljem provjere ispravnosti i univerzalnosti rješenja nezavisno od veličine i numeracije čvorova mreže:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="5">
+<features borderColor="default" oddRowsColor="default" evenRowsColor="default" tabularvalignment="middle">
+<column alignment="center" valignment="top" color="default">
+<column alignment="center" valignment="top" color="default">
+<column alignment="center" valignment="top" color="default">
+<column alignment="center" valignment="top" color="default">
+<column alignment="center" valignment="top" color="default">
+<row color="default">
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Test slučaj
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Broj čvorova
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Broj iteracija (NR)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Status
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Napomena
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row color="default">
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+case9
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+9
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+4
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Uspješno
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+SSSC na grani 5-6
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row color="default">
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+case30
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+30
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+4
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Uspješno
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+SSSC na grani 1-2
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row color="default">
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+case118
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+118
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+5
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Uspješno
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+SSSC na grani 5-6
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row color="default">
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+case300
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+300
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+6
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Uspješno
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" color="default" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Nesekvencijalna numeracija čvorova (npr.
+ 37,
+ 9001)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Svi test-slučajevi su uspješno konvertovani i riješeni Newton-Raphson metodom,
+ uz kvadratnu konvergenciju karakterističnu za ovu metodu (greška opada za približno kvadrat svake iteracije).
+ Posebno je značajan rezultat za case300 mrežu,
+ čija nesekvencijalna numeracija čvorova zahtijeva robusnu implementaciju mapiranja ID čvora u indeks matrice —
+ inicijalna implementacija zasnovana na pretpostavci da je indeks jednak (ID − 1) dovodila je do pristupa izvan granica matrice i rušenja aplikacije,
+ što je otklonjeno uvođenjem eksplicitnog mapiranja preko pomoćne strukture podataka.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Graphics
+	filename /Users/davud/Downloads/Screenshot 2026-07-06 at 17.52.13.png
+	width 1cm
+	height 1cm
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Slika 1:
+ Konvergencija Newton-Raphson metode za sva četiri test-slučaja.
+ Sve mreže konvergiraju do mašinske preciznosti (eps < 10⁻⁷) unutar 4-6 iteracija,
+ potvrđujući ispravnost i numeričku stabilnost implementacije nezavisno od veličine mreže.
+\end_layout
+
+\begin_layout Section*
+Zaključak
+\end_layout
+
+\begin_layout Standard
+U ovom projektu razvijen je natID plugin za konverziju MATPOWER modela elektroenergetske mreže u digitalni model tokova snage proširen SSSC uređajem,
+ namijenjen dTwin Digital Twin okruženju.
+ Implementacija u potpunosti koristi natID dense matrične strukture za sve matrične proračune,
+ natID gui::
+ biblioteku za grafički interfejs,
+ i arhitekturu zasnovanu na dva izvršna niza koja omogućava prikaz napretka konverzije u realnom vremenu bez zamrzavanja korisničkog interfejsa.
+\end_layout
+
+\begin_layout Standard
+Rješenje je testirano na četiri standardna IEEE test-slučaja različitih veličina (case9,
+ case30,
+ case118,
+ case300),
+ pri čemu su svi slučajevi uspješno konvertovani i riješeni Newton-Raphson metodom uz kvadratnu konvergenciju.
+ Posebna pažnja posvećena je robusnosti implementacije za mreže sa nesekvencijalnom numeracijom čvorova (case300),
+ gdje je otklonjena inicijalna greška koja je dovodila do pristupa izvan granica matrice.
+\end_layout
+
+\begin_layout Standard
+Mogući pravci daljeg razvoja uključuju proširenje modela na više istovremenih SSSC uređaja u istoj mreži,
+ uvođenje dinamičkog (vremenski-zavisnog) modela SSSC kontrolera,
+ te optimizaciju pozicioniranja uređaja u mreži na osnovu unaprijed definisanog kriterijuma (npr.
+ minimizacije gubitaka).
+\end_layout
+
+\begin_layout Section*
+Literatura
+\end_layout
+
+\begin_layout Standard
+[1] E.
+ Acha,
+ C.
+ R.
+ Fuerte-Esquivel,
+ H.
+ Ambriz-Pérez,
+ C.
+ Angeles-Camacho,
+ FACTS:
+ Modelling and Simulation in Power Networks.
+ Chichester:
+ John Wiley & Sons,
+ 2004.
+\end_layout
+
+\begin_layout Standard
+[2] R.
+ D.
+ Zimmerman,
+ C.
+ E.
+ Murillo-Sánchez,
+ R.
+ J.
+ Thomas,
+ "MATPOWER:
+ Steady-State Operations,
+ Planning and Analysis Tools for Power Systems Research and Education," IEEE Transactions on Power Systems,
+ vol.
+ 26,
+ no.
+ 1,
+ pp.
+ 12-19,
+ Feb.
+ 2011.
+\end_layout
+
+\begin_layout Standard
+[3] natID SDK dokumentacija,
+ I.
+ Dzafic.
+\end_layout
+
+\begin_layout Standard
+[4] dTwin Digital Twin okruženje,
+ natID SDK dokumentacija.
+\end_layout
+
+\begin_layout Standard
+
+\end_layout
+
+\end_body
+\end_document
