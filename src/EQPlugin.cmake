@@ -40,3 +40,11 @@ target_link_libraries(${EQPLUGIN_NAME} debug ${MU_LIB_DEBUG} optimized ${MU_LIB_
 target_compile_definitions(${EQPLUGIN_NAME} PUBLIC PLUGIN_EXPORTS)
 
 #setIDEPropertiesForLib(${EQPLUGIN_NAME})
+
+if(APPLE)
+	add_custom_command(TARGET ${EQPLUGIN_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/ba.natID/dTwin/plugins"
+		COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:${EQPLUGIN_NAME}>" "$ENV{HOME}/ba.natID/dTwin/plugins/eq1d.dylib"
+		COMMENT "Kopiram eq1d plugin u dTwin plugins folder"
+	)
+endif()
