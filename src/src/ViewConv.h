@@ -108,7 +108,7 @@ protected:
 
         //Select input filen name button click
         _btnSelectInFn.onClick([this]{
-            gui::OpenFileDialog::show(this, tr("openEQModel"), "*.txt", _wndID + 1000, [this](gui::FileDialog* pDlg)
+            gui::OpenFileDialog::show(this, tr("openEQModel"), "*.m", _wndID + 1000, [this](gui::FileDialog* pDlg)
             {
                   auto status = pDlg->getStatus();
                   if (status == gui::FileDialog::Status::OK)
